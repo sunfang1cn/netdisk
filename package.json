@@ -1,0 +1,29 @@
+{
+  "name": "netdisk",
+  "version": "0.0.1",
+  "description": "simple node.js netdisk app",
+  "keywords": [
+    "netdisk",
+    "socket.io"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/sunfang1cn/node-netdisk"
+  },
+  "scripts": {
+    "test": "make test"
+  },
+  "dependencies": {
+    "connect": "2.18.0",
+    "socket.io": "2.2.0"
+  },
+  "devDependencies": {
+    
+  },
+  "contributors": [
+    {
+      "name": "sunfang1cn",
+      "email": "sunfang1cn@gmail.com"
+    }
+  ]
+}

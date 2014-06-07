@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>listing directory {directory}</title>
+    <style>{style}</style>
+    <style>
+      header{ width: 900px; height: 24px; line-height: 24px; text-align: center; margin: 10px auto; font-size: 16px; color: #666; font-weight: bold; }
+      .upload-box{ width: 600px; height: 80px; border: 1px solid #333; background-color: #dedede; position: relative; text-align: center; line-height: 80px; font-size: 14px; font-weight: bold; margin: 10px auto; }
+      .center{ width: 600px; margin: 20px auto; }
+      .upload-ul li{ border-bottom:1px solid #ddd; height: 30px; line-height: 30px; position: relative; }
+      .position-right{ text-align: right; position: absolute; top: 0; right: 4px; width: 200px; font-size: 10px; height: 30px; line-height: 30px; }
+      .position-right span{ margin-left: 8px; cursor: pointer; font-weight: bold; color: #666; }
+      .position-right span:hover{ text-decoration: underline; }
+      .position-right span.upload-status{ font-weight: normal; color: green; }
+      .success{ background-color: green; color: #fff; }
+      .fail{ background-color: red; color: #fff; }
+      .normal{ background-color: #fff; color: #333; }
+      .fail .position-right span,
+      .success .position-right span{ color: #fff; }
+    </style>
+    <script src="http://lib.sinaapp.com/js/jquery/1.7.2/jquery.min.js"></script>
+    <script src="http://cdn.socket.io/socket.io-1.0.4.js"></script>
+    <script>
+      function search() {
+        var str = $('#search').val()
+          , links = $('#files a');
+
+        links.each(function(link){
+          var text = links[link].textContent;
+
+          if ('..' == text) return;
+          if (str.length && ~text.indexOf(str)) {
+            $(links[link]).addClass('highlight');
+          } else {
+            $(links[link]).removeClass('highlight');
+          }
+        });
+      }
+
+      $(window).on('load', function(){
+        $('#search').on('keyup', search);
+      });
+    </script>
+    
+  </head>
+  <body class="directory">
+    <input id="search" type="text" placeholder="Search" autocomplete="off" />
+    <div id="wrapper">
+      <h1>{linked-path}</h1>
+      {files}
+    </div>
+    <div style="margin-top: 80px; border: 1px dotted;">
+        <header>
+      文件上传
+    </header>
+    <div class="upload-box" id="dropbox">
+      请把文件拖到此处
+    </div>
+    <div class="center">
+      <input type="button" value="全部上传" class="submit"/>
+      <input type="button" value="清空列表" class="clear"/>
+    </div>
+    <div class="center upload-list"></div>
+    </div>
+    <script>
+    var socket = io.connect('http://' + location.hostname + ':8089');
+      gid = function(id) { return document.getElementById(id); },
+      dropbox = gid('dropbox'),
+      ulJO = $('<ul class="upload-ul"></ul>').appendTo(".upload-list"),
+      itemTpl = [
+        '<li data-index="{index}">',
+          '<span class="upload-index"></span> ',
+          '<strong>{name}</strong> - <span>{size}</span> ',
+          '<div class="position-right">',
+            '<span class="upload-status"></span>',
+            '<span class="upload-upload-start">Upload</span>',
+            '<span class="upload-delete">Delete</span>',
+          '</div>',
+        '</li>'
+      ].join(""),
+      render = function(data, index) {
+        var tpl = itemTpl.replace("{index}", index),
+          t = null;
+
+        for(var o in data) {
+          t = data[o];
+          if (o == "size") {
+            t = (t / 1024).toFixed(2) + "KB";
+          };
+          tpl = tpl.replace("{"+ o +"}", t);
+        }
+        return tpl;
+      },
+      readFile = function(index, successCallback, failCallback, completeCallback) {
+        var flag = index.split('-'),
+          info = dic[flag[0]][flag[1]],
+          blob = null,
+          reader = new FileReader();
+
+        var mark = 0,
+          step = 1024 * 100,
+          size = info.size - 1,
+          loop = 1,
+          status = 'doing';
+
+        var run = function() {
+          if (step > size - mark) {
+            blob = info.slice(mark, size);
+            status = 'done';
+          }else {
+            blob = info.slice(mark, mark + step);
+            mark = step * loop;
+            loop ++;
+          }
+          reader.readAsBinaryString(blob);
+        };  
+
+        reader.onerror = function(e) {
+          failCallback && failCallback();
+        };
+        reader.onloadend = function(e) {
+          var params = { name: info.name, fileData: this.result, status: status , path: window.location.pathname, password: '34a07c69d7bf6aeba21127e1ca682c35'};
+          socket.emit('fileData', params);
+          status == 'done' && completeCallback();
+        };
+        socket.on('result', function (data) {
+          data = JSON.parse(data);
+          if (data.Status == 0) {
+            successCallback && successCallback((mark / size * 100).toFixed(2), status);
+            if(status != 'done') {
+              run();
+            }
+          }else {
+            failCallback && failCallback();
+          }
+        });
+        run();
+      },
+      upload = function(jo, completeCallback) {
+        var fatherJO = jo.parents('li'),
+          id = fatherJO.attr('data-index'),
+          tipJO = fatherJO.find('.upload-status');
+
+        readFile(id, function(percent, status) {
+          if (status == "done") {
+            tipJO.html("上传 <strong>100</strong> %");
+            fatherJO.removeClass().addClass('success');
+          }else {
+            tipJO.html("上传 <strong>" + percent + "</strong> %");
+          }
+        }, function(e) {
+          tipJO.html('上传失败');
+          fatherJO.removeClass().addClass('fail');
+        }, function() {
+          completeCallback && completeCallback();
+        });
+      },
+      updateLineNumber = function() {
+        ulJO.find('.upload-index').each(function(i, n) {
+              n.innerHTML = "[" + (i+1) + "]";
+            });
+      },
+      dic = {},
+      index = 0,
+      count = 0;
+
+    var init = function() {
+      dic = {};
+      index = 0;
+      count = 0;
+    };
+
+    $('.clear').click(function() {
+      ulJO.empty();
+      init();
+    });
+
+    $('.submit').click(function() {
+      var trigger = ulJO.find('.upload-upload-start'),
+        len  = trigger.length,
+        i = 0,
+        loop = function() {
+          if (++i < len) {
+            upload($(trigger[i]), loop);
+          }
+        };
+
+      if (len != 0) {
+        upload($(trigger[i]), loop);
+      };
+    });
+
+    ulJO.on('click', '.upload-delete', function() {
+      var thisJO = $(this),
+          fatherJO = thisJO.parents('li');
+
+        fatherJO.fadeOut('fast', function() {
+          fatherJO.remove();
+          updateLineNumber();
+          count--;
+          if (count == 0) { 
+            init();
+        };
+        });
+    });
+
+    ulJO.on('click', '.upload-upload-start', function() {
+        upload($(this));
+    });
+
+    dropbox.addEventListener("dragenter", function(e){ 
+        dropbox.style.backgroundColor = 'yellow';   
+        return false;
+    }, false);   
+    dropbox.addEventListener("dragleave", function(e){
+        dropbox.style.backgroundColor = '#dedede';   
+        return false;
+    }, false);
+    dropbox.addEventListener("dragover", function(e){   
+        e.stopPropagation();   
+        e.preventDefault();   
+        return false;
+    }, false);
+    dropbox.addEventListener("drop", function(e){   
+      e.preventDefault();
+      e.stopPropagation();
+      
+      var list = e.dataTransfer.files,
+      len = list.length,
+      tpls = [];
+      dic[index] = list;
+      count += len;
+      for(var i = 0; i < len; i++) {
+        tpls.push(render(list[i], index + "-" + i));
+      }
+      ulJO.append(tpls.join(""));
+      index++;
+      updateLineNumber();
+      dropbox.style.backgroundColor = '#dedede';
+      return false;
+    }, false);
+    </script>
+  </body>
+</html>
+
+
